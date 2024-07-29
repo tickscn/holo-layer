@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QObject
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import QObject, Qt
+from PyQt6.QtGui import QColor, QPen
 
 from utils import *
 
@@ -52,7 +52,8 @@ class IndentLine(QObject):
                     if ci == 0 and indent_level == 0:
                         continue
 
-                    painter.setPen(self.rainbow_indent_colors[ci % len(self.rainbow_indent_colors)])
+                    pen = QPen(self.rainbow_indent_colors[ci % len(self.rainbow_indent_colors)], 1.0, Qt.PenStyle.DotLine)
+                    painter.setPen(pen)
                     last_index = -1
                     for index, indent in enumerate(indents):
                         if indent > indent_level or indent == -1:
