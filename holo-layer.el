@@ -742,7 +742,7 @@ Including title-bar, menu-bar, offset depends on window system, and border."
     (let ((x (+ (nth 0 cursor-pos) (nth 0 window-allocation)
                 window-margin left-fringe-w))
           (y (+ (nth 1 cursor-pos) (nth 1 window-allocation)))
-          (w (if (equal cursor-type 'bar) 1
+          (w (if (equal cursor-type 'bar) (frame-char-width)
                (if-let ((glyph (when (< p (point-max))
                                  (aref (font-get-glyphs (font-at p) p (1+ p)) 0))))
                    (aref glyph 4)
