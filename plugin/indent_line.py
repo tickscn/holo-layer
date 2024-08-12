@@ -33,7 +33,7 @@ class IndentLine(QObject):
                 y = cursor_y + emacs_y
 
                 # Add some offset make sure indent at right of indent char.
-                x += 5
+                x += 2
 
                 ava_indents = sorted(set(indents))
                 if ava_indents[0] == 0:
