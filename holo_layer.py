@@ -131,9 +131,9 @@ class HoloLayer:
         if platform.system() == "Darwin":
             from AppKit import NSApplication
             NSApp = NSApplication.sharedApplication()
-            windows = NSApp.windows()
-            if windows and len(windows) > 0:
-                NSApp.windows()[0].makeKeyAndOrderFront_(None)
+            window = NSApp.windows().firstObject()
+            if window:
+                window.makeKeyAndOrderFront_(None)
 
         self.holo_window.update_info(self.emacs_frame_info, self.window_info, self.cursor_info, self.menu_info, self.sort_tab_info, self.is_insert_command)
 
