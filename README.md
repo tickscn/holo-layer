@@ -6,9 +6,9 @@ HoloLayer is a multimedia layer plugin specifically designed for Emacs. It is de
 ## Installation
 1. Install Emacs 28 or above
 2. Install Python dependencies: 
- - Linux: `pip3 install epc sexpdata six pynput inflect PyQt6 PyQt6-Qt6 PyQt6-sip` (For ArchLinux, please use pacman to install PyQt6)
- - Windows: `pip3 install epc sexpdata six pynput inflect pygetwindow PyQt6 PyQt6-Qt6 PyQt6-sip`
- - macOS: `pip3 install epc sexpdata six pynput inflect pyobjc PyQt6 PyQt6-Qt6 PyQt6-sip`
+ - Linux: `pip3 install epc sexpdata six inflect PyQt6 PyQt6-Qt6 PyQt6-sip` (For ArchLinux, please use pacman to install PyQt6)
+ - Windows: `pip3 install epc sexpdata six inflect pygetwindow PyQt6 PyQt6-Qt6 PyQt6-sip`
+ - macOS: `pip3 install epc sexpdata six inflect pyobjc PyQt6 PyQt6-Qt6 PyQt6-sip`
 3. Download this repository using `git clone`, and replace the load-path in the configuration below
 4. Add the following code to your configuration file ~/.emacs:
 
@@ -45,7 +45,7 @@ Note:
   <img style='height: auto; width: 80%; object-fit: contain' src="./demo/sort-tab-ui.png">
 </p>
 
-Need install [sort-tab](https://github.com/manateelazycat/sort-tab) first, then enable option `holo-layer-sort-tab-ui`
+Need install [sort-tab](https://github.com/manateelazycat/sort-tab) first, then add `(holo-layer-enable-sort-tab)` in your config
 
 All icons are placed under the subdirectory `icon_cache`. You're welcome to contribute icons that you think look good. Icons can be found from websites such as https://devicon.dev or https://icons8.com/icons/set/programming-language.
 

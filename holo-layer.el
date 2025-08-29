@@ -91,6 +91,10 @@
 
 (defvar holo-layer-server-port nil)
 
+(defvar holo-layer--sort-tab-is-load-p (require 'sort-tab nil t))
+
+(defvar holo-layer--blink-search-is-load-p (require 'blink-search nil t))
+
 (defun holo-layer--start-epc-server ()
   "Function to start the EPC server."
   (unless (process-live-p holo-layer-server)
@@ -178,7 +182,7 @@ Then Holo-Layer will start by gdb, please send new issue with `*holo-layer*' buf
 
 (defcustom holo-layer-cursor-animation-color-gradient-start-value 50
   "The start value of gradient cursor color, start color is lighter 50 than cursor color."
-  :type 'interger)
+  :type 'integer)
 
 (defcustom holo-layer-cursor-animation-type "jelly"
   "Cursor animation type can be (jelly, arrow, jelly easing)"
@@ -192,7 +196,7 @@ If you set it with nil, cursor color will follow current state dynamically."
 
 (defcustom holo-layer-cursor-alpha 200
   "Cursor alpha(0-255)."
-  :type 'interger)
+  :type 'integer)
 
 (defcustom holo-layer-cursor-animation-duration 200
   "Animation duration for cursor (200ms)."
@@ -221,6 +225,16 @@ Default is `kdic-ec-11w', you can replace it with StarDict dictionary path
 Example, if you have dictionary `/usr/share/stardict/dic/stardict-oxford-gb-formated-2.4.2/oxford-gb-formated.ifo',
 you need set this value to `/usr/share/stardict/dic/stardict-oxford-gb-formated-2.4.2/oxford-gb-formated', not include `.ifo' extension."
   :type 'string)
+
+(defcustom holo-layer-place-info-light-background-color "#FAFAFC"
+  "The light background use for render place info window.
+
+Only use this value when place info show at top-left corner, meantime, cursor is at right of screen.")
+
+(defcustom holo-layer-place-info-dark-background-color "#242525"
+  "The light background use for render place info window.
+
+Only use this value when place info show at top-left corner, meantime, cursor is at right of screen.")
 
 (defcustom holo-layer-enable-window-border nil
   "Show window border if enable this option."
@@ -295,34 +309,34 @@ Default is disable.")
                               (not (string-match-p "QT_SCREEN_SCALE_FACTOR" var))))
                        process-environment)))
     (when holo-layer-enable-debug
-      (add-to-list 'environments "QT_DEBUG_PLUGINS=1" t))
+      (cl-pushnew "QT_DEBUG_PLUGINS=1" environments :test #'equal))
 
     (unless (eq system-type 'darwin)
-      (add-to-list 'environments
-                   (cond
-                    ((holo-layer-emacs-running-in-wayland-native)
-                     ;; Wayland native need to set QT_AUTO_SCREEN_SCALE_FACTOR=1
-                     ;; otherwise Qt window only have half of screen.
-                     "QT_AUTO_SCREEN_SCALE_FACTOR=1")
-                    (t
-                     ;; XWayland need to set QT_AUTO_SCREEN_SCALE_FACTOR=0
-                     ;; otherwise Qt which explicitly force high DPI enabling get scaled TWICE.
-                     "QT_AUTO_SCREEN_SCALE_FACTOR=0"))
-                   t)
+      (cl-pushnew (cond
+                   ((holo-layer-emacs-running-in-wayland-native)
+                    ;; Wayland native need to set QT_AUTO_SCREEN_SCALE_FACTOR=1
+                    ;; otherwise Qt window only have half of screen.
+                    "QT_AUTO_SCREEN_SCALE_FACTOR=1")
+                   (t
+                    ;; XWayland need to set QT_AUTO_SCREEN_SCALE_FACTOR=0
+                    ;; otherwise Qt which explicitly force high DPI enabling get scaled TWICE.
+                    "QT_AUTO_SCREEN_SCALE_FACTOR=0"))
+                  environments
+                  :test #'equal)
 
-      (add-to-list 'environments "QT_FONT_DPI=96" t)
+      (cl-pushnew "QT_FONT_DPI=96" environments :test #'equal)
 
       ;; Make sure holo layer application scale support 4k screen.
-      (add-to-list 'environments "QT_SCALE_FACTOR=1" t)
+      (cl-pushnew "QT_SCALE_FACTOR=1" environments :test #'equal)
 
       ;; Fix CORS problem.
-      (add-to-list 'environments "QTWEBENGINE_CHROMIUM_FLAGS=--disable-web-security" t)
+      (cl-pushnew "QTWEBENGINE_CHROMIUM_FLAGS=--disable-web-security" environments :test #'equal)
 
       ;; Use XCB for input event transfer.
       ;; Only enable this option on Linux platform.
       (when (and (eq system-type 'gnu/linux)
                  (not (holo-layer-emacs-running-in-wayland-native)))
-        (add-to-list 'environments "QT_QPA_PLATFORM=xcb" t)))
+        (cl-pushnew "QT_QPA_PLATFORM=xcb" environments :test #'equal)))
     environments))
 
 (defun holo-layer-start-process ()
@@ -485,7 +499,7 @@ Including title-bar, menu-bar, offset depends on window system, and border."
 
 (defun holo-layer-is-normal-window-p (window)
   (not (or (minibufferp (window-buffer window))
-           (and (require 'sort-tab nil t)
+           (and holo-layer--sort-tab-is-load-p
                 (string-equal (buffer-name (window-buffer window)) sort-tab-buffer-name)))))
 
 (defun holo-layer-get-emacs-frame-info ()
@@ -534,7 +548,7 @@ Including title-bar, menu-bar, offset depends on window system, and border."
                             (not (equal cursor-info holo-layer-last-cursor-info)))))
     (if (and holo-layer-cache-emacs-frame-info holo-layer-cache-window-info)
         (holo-layer-call-async "update_window_info"
-                               holo-layer-cache-emacs-frame-info
+                               (or holo-layer-cache-emacs-frame-info (holo-layer-get-emacs-frame-info))
                                holo-layer-cache-window-info
                                cursor-info
                                (holo-layer-get-menu-info)
@@ -591,7 +605,7 @@ Including title-bar, menu-bar, offset depends on window system, and border."
                                  (holo-layer-get-menu-info)
                                  (holo-layer-is-insert-command-p)))
          ;; Support blink-search.
-         ((and (require 'blink-search nil t)
+         ((and holo-layer--blink-search-is-load-p
                (equal (buffer-name (window-buffer current-window)) blink-search-input-buffer))
           (let* ((top-window (get-buffer-window blink-search-start-buffer))
                  (top-window-info (holo-layer-get-window-info holo-layer-emacs-frame top-window current-window))
@@ -775,8 +789,25 @@ Including title-bar, menu-bar, offset depends on window system, and border."
                   ""
                 (if mark-active
                     (buffer-substring-no-properties (region-beginning) (region-end))
-                  (thing-at-point 'word t)))))
-    (holo-layer-call-async "update_place_info" (if word word ""))))
+                  (thing-at-point 'word t))))
+        (cursor-info (ignore-errors (holo-layer-get-cursor-info))))
+    (holo-layer-call-async "update_place_info"
+                           (if word word "")
+                           (if cursor-info cursor-info ""))))
+
+(setq holo-layer-place-info-last-buffer nil)
+
+(defun holo-layer-hide-place-info ()
+  "Only run when actually switching buffers"
+  (let ((current (current-buffer)))
+    (when (and holo-layer-place-info-last-buffer
+               (not (eq holo-layer-place-info-last-buffer current))
+               (not (minibufferp)))
+      (holo-layer-call-async "update_place_info" "" ""))
+    (setq holo-layer-place-info-last-buffer current)))
+
+(add-hook 'window-configuration-change-hook 'holo-layer-hide-place-info)
+(add-hook 'minibuffer-exit-hook 'holo-layer-hide-place-info)
 
 (defun holo-layer-enable ()
   (add-hook 'post-command-hook #'holo-layer-start-process)
@@ -785,7 +816,7 @@ Including title-bar, menu-bar, offset depends on window system, and border."
     (add-hook 'post-command-hook #'holo-layer-monitor-cursor-change))
 
   (when (and holo-layer-sort-tab-ui
-             (require 'sort-tab nil t))
+             holo-layer--sort-tab-is-load-p)
     (setq sort-tab-render-function 'holo-layer-render-sort-tab))
 
   (add-hook 'post-command-hook #'holo-layer-show-place-info)
@@ -819,7 +850,7 @@ Including title-bar, menu-bar, offset depends on window system, and border."
     (remove-hook 'post-command-hook #'holo-layer-monitor-cursor-change))
 
   (when (and holo-layer-sort-tab-ui
-             (require 'sort-tab nil t))
+             holo-layer--sort-tab-is-load-p)
     (setq sort-tab-render-function 'sort-tab-render-tabs))
 
   (remove-hook 'post-command-hook #'holo-layer-show-place-info)
@@ -919,7 +950,7 @@ Including title-bar, menu-bar, offset depends on window system, and border."
                            current-tab-name
                            (window-pixel-height sort-tab-window)
                            sort-tab-name-max-length
-                           holo-layer-cache-emacs-frame-info
+                           (or holo-layer-cache-emacs-frame-info (holo-layer-get-emacs-frame-info))
                            (holo-layer-get-theme-mode)
                            (holo-layer-get-theme-foreground-color)
                            (holo-layer-get-theme-background-color)
@@ -971,6 +1002,17 @@ Including title-bar, menu-bar, offset depends on window system, and border."
            (= (point-at-eol) (point)))
       -1
     (current-column)))
+
+(defun holo-layer-enable-sort-tab ()
+  (setq holo-layer-sort-tab-ui t)
+  ;; Need call `holo-layer-start-process' immediately, otherwise we can't see sort-tab when Emacs start and nothing to touch.
+  (holo-layer-start-process))
+
+(defun holo-layer--load-theme (&rest _ignores)
+  (when (and holo-layer-sort-tab-ui
+             holo-layer--sort-tab-is-load-p)
+    (sort-tab-update-list)))
+(advice-add #'load-theme :after #'holo-layer--load-theme)
 
 (provide 'holo-layer)
 

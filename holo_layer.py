@@ -24,7 +24,7 @@ import sys
 import threading
 
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QPainter
 
 from PyQt6.QtCore import QRectF
@@ -38,7 +38,6 @@ from plugin.window_number import WindowNumber
 from plugin.window_screenshot import WindowScreenshot
 from plugin.indent_line import IndentLine
 from plugin.type_animation import TypeAnimation
-from pynput.keyboard import Listener as kbListener
 from PyQt6.QtGui import QGuiApplication, QPainterPath
 from utils import *
 
@@ -80,9 +79,10 @@ class HoloLayer:
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         self.server_thread.start()
 
-        # Start key event listener thread.
-        self.key_event_listener = threading.Thread(target=self.listen_key_event)
-        self.key_event_listener.start()
+        # Add timer to periodically check window focus
+        self.focus_check_timer = QTimer()
+        self.focus_check_timer.timeout.connect(self.check_window_focus)
+        self.focus_check_timer.start(200) # Check every 200 milliseconds
 
         # Pass epc port and webengine codec information to Emacs when first start holo-layer.
         eval_in_emacs('holo-layer--first-start', self.server.server_address[1])
@@ -137,8 +137,8 @@ class HoloLayer:
 
         self.holo_window.update_info(self.emacs_frame_info, self.window_info, self.cursor_info, self.menu_info, self.sort_tab_info, self.is_insert_command)
 
-    def update_place_info(self, word):
-        self.holo_window.update_place_info(word)
+    def update_place_info(self, word, cursor_info):
+        self.holo_window.update_place_info(word, cursor_info)
 
     def update_indent_info(self, emacs_indent_infos):
         self.holo_window.update_indent_info(emacs_indent_infos)
@@ -177,24 +177,6 @@ class HoloLayer:
         }
         self.update()
 
-    def listen_key_event(self):
-        while True:
-            with kbListener(
-                    on_press=self.key_press,
-                    on_release=self.key_release) as listener:
-                listener.join()
-
-    def key_press(self, key):
-        pass
-
-    def key_release(self, key):
-        if self.get_active_window_id() == self.get_emacs_id():
-            if not self.holo_window_is_show:
-                self.show_holo_window()
-        else:
-            if self.holo_window_is_show:
-                self.hide_holo_window()
-
     def get_emacs_id(self):
         if platform.system() == "Windows":
             import pygetwindow as gw
@@ -230,6 +212,15 @@ class HoloLayer:
 
             return win_id
 
+    def check_window_focus(self):
+        """Periodically check if Emacs has focus and show/hide holo-layer window accordingly"""
+        if self.get_active_window_id() == self.get_emacs_id():
+            if not self.holo_window_is_show:
+                self.show_holo_window()
+        else:
+            if self.holo_window_is_show:
+                self.hide_holo_window()
+
     def cleanup(self):
         """Do some cleanup before exit python process."""
         close_epc_client()
@@ -247,6 +238,7 @@ class HoloWindow(QWidget):
         self.window_info = []
         self.sort_tab_info = {}
         self.place_word = ""
+        self.place_cursor_info = ""
 
         self.window_border = WindowBorder()
         self.window_number = WindowNumber()
@@ -264,9 +256,8 @@ class HoloWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.screen_index = 0
-        self.screen = QGuiApplication.primaryScreen()
-        self.screen_geometry = self.screen.availableGeometry()
-        self.setGeometry(self.screen_geometry)
+        self.screens = QGuiApplication.screens()
+        self.update_screen_geometry()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -277,26 +268,43 @@ class HoloWindow(QWidget):
 
         self.show_up()
 
+    def update_screen_geometry(self):
+        # Get the screen based on screen_index
+        if 0 <= self.screen_index < len(self.screens):
+            self.screen = self.screens[self.screen_index]
+        else:
+            self.screen = QGuiApplication.primaryScreen()
+            
+        self.screen_geometry = self.screen.geometry()
+        self.setGeometry(self.screen_geometry)
+        
+        # Update window position bias based on screen position
+        self.window_bias_x = self.screen_geometry.x()
+        self.window_bias_y = self.screen_geometry.y()
+
     def show_up(self):
         if not self.isVisible():
             window_flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowTransparentForInput | Qt.WindowType.WindowDoesNotAcceptFocus
             if platform.system() == "Darwin":
                 window_flags |= Qt.WindowType.NoDropShadowWindowHint
                 self.setWindowFlags(window_flags)
-                self.window_bias_x, self.window_bias_y = self.screen_geometry.x(), self.screen_geometry.y()
                 self.show()
             else:
-                # Why use `SplashScreen` flag for holo-layer fullsreen window?
+                # Why use `Tool and X11BypassWindowManagerHint` flag for holo-layer fullsreen window?
                 #
                 # Because below flag can't work. ;)
-                # 1. Qt.WindowType.Tool, holo-layer window coordinate will change when we do `workspace-switch` operation.
+                # 1. Qt.WindowType.SplashScreen, SplashScreen will change behavior with different Qt version
                 # 2. Qt.WindowType.Popup, popup window is modal window, and it will grab keyboard to cause system can't response keyboard event
                 # 3. Qt.WindowType.Tooltip or Qt.Window.X11BypassWindowManagerHint, window height can't fullscreen, window border at bottom can't render
                 # 4. Qt.WindowType.SubWindow, window can't skip taskbar or alt-tab window list.
-                window_flags |= Qt.WindowType.SplashScreen
+                if platform.system() == "Linux":
+                    window_flags |= Qt.WindowType.Tool
+                    window_flags |= Qt.WindowType.X11BypassWindowManagerHint
                 self.setWindowFlags(window_flags)
-                self.window_bias_x, self.window_bias_y = 0, 0
                 self.showFullScreen()
+
+            # Move window to correct screen after showing
+            self.move(self.window_bias_x, self.window_bias_y)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -322,7 +330,7 @@ class HoloWindow(QWidget):
 
         self.window_border.draw(painter, self.window_info, self.emacs_frame_info)
 
-        self.place_info.draw(painter, self.window_info, self.emacs_frame_info, self.place_word)
+        self.place_info.draw(painter, self.window_info, self.emacs_frame_info, self.place_word, self.place_cursor_info)
 
         if self.show_window_number_flag:
             self.window_number.draw(painter, self.window_info, self.emacs_frame_info)
@@ -353,26 +361,27 @@ class HoloWindow(QWidget):
                 if total_mask is not None:
                     painter.setClipPath(emacs_area - total_mask, Qt.ClipOperation.IntersectClip)
 
-    def update_place_info(self, word):
+    def update_place_info(self, word, cursor_info):
         word = word.lower()
 
-        if self.place_word != word:
+        if self.place_word != word and self.place_cursor_info != cursor_info:
             self.place_word = word
-            self.update()
+            self.place_cursor_info = cursor_info
+
+        self.update()
 
     def update_indent_info(self, emacs_indent_infos):
         self.emacs_indent_infos = emacs_indent_infos
         self.update()
 
     def update_screen_geometry_info(self, screen_index):
-        if platform.system() != "Darwin":
+        if not isinstance(screen_index, int):
             return
+
         if screen_index != self.screen_index:
             self.screen_index = screen_index
-            self.screen = super().screen().virtualSiblings()[screen_index]
-            self.screen_geometry = self.screen.availableGeometry()
-            self.window_bias_x, self.window_bias_y = self.screen_geometry.x(), self.screen_geometry.y()
-            self.setGeometry(self.screen_geometry)
+            self.update_screen_geometry()
+            # Update window position when screen changes
             self.move(self.window_bias_x, self.window_bias_y)
 
     def update_info(self, emacs_frame_info, window_info, cursor_info, menu_info, sort_tab_info, is_insert_command):
